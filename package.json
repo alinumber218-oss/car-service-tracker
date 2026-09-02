@@ -1,0 +1,20 @@
+{
+  "name": "car-service-tracker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Car Service Tracker - monorepo root (backend microservices + mobile app + shared libs)",
+  "workspaces": [
+    "libs/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "dev:auth": "npm run dev --workspace=auth-service",
+    "dev:core": "npm run dev --workspace=core-service"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

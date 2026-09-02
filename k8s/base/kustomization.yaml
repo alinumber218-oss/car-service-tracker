@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: car-tracker
+
+resources:
+  - namespace.yaml
+  - postgres/postgres.yaml
+  - rabbitmq/rabbitmq.yaml
+  - minio/minio.yaml
+  - auth-service/auth-service.yaml
+  - core-service/core-service.yaml
+  - gateway/ingress.yaml
+
+# Migration Jobs are intentionally NOT included here - they're one-shot and
+# get applied manually (see k8s/README.md) so `kubectl apply -k` stays
+# idempotent for the long-running resources.

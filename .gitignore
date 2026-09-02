@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+*.log
+coverage/
+.DS_Store
+*.pem
+android/app/build/
+ios/build/
+ios/Pods/
+.idea/
+.vscode/
+minio-data/
+postgres-data/
+rabbitmq-data/

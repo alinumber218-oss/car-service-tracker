@@ -1,0 +1,232 @@
+# GitLab CI/CD pipeline for the Car Service Tracker backend monorepo.
+# Assumes a self-managed GitLab CE instance with the Container Registry
+# enabled and a Kubernetes-executor runner registered (see docs/CI_CD.md).
+
+stages:
+  - install
+  - lint
+  - test
+  - sonarqube
+  - build
+  - scan
+  - deploy-staging
+  - deploy-production
+
+variables:
+  NODE_IMAGE: "node:20-alpine"
+
+# ---------------------------------------------------------------------------
+# Reusable job template - each service reruns the same steps, scoped to its
+# own folder via `only: changes:` so unrelated services don't get rebuilt.
+# ---------------------------------------------------------------------------
+.node_service_template: &node_service_template
+  image: $NODE_IMAGE
+  before_script:
+    - cd $SERVICE_PATH
+    - npm ci --prefix ../.. 2>/dev/null || npm install
+
+install:auth-service:
+  <<: *node_service_template
+  stage: install
+  variables:
+    SERVICE_PATH: services/auth-service
+  script:
+    - npm install
+  artifacts:
+    paths:
+      - services/auth-service/node_modules
+    expire_in: 1 hour
+  rules:
+    - changes:
+        - services/auth-service/**/*
+        - libs/shared-types/**/*
+
+install:core-service:
+  <<: *node_service_template
+  stage: install
+  variables:
+    SERVICE_PATH: services/core-service
+  script:
+    - npm install
+  artifacts:
+    paths:
+      - services/core-service/node_modules
+    expire_in: 1 hour
+  rules:
+    - changes:
+        - services/core-service/**/*
+        - libs/shared-types/**/*
+
+lint:auth-service:
+  <<: *node_service_template
+  stage: lint
+  variables:
+    SERVICE_PATH: services/auth-service
+  needs: ["install:auth-service"]
+  script:
+    - npm run lint
+  rules:
+    - changes:
+        - services/auth-service/**/*
+
+lint:core-service:
+  <<: *node_service_template
+  stage: lint
+  variables:
+    SERVICE_PATH: services/core-service
+  needs: ["install:core-service"]
+  script:
+    - npm run lint
+  rules:
+    - changes:
+        - services/core-service/**/*
+
+test:auth-service:
+  <<: *node_service_template
+  stage: test
+  variables:
+    SERVICE_PATH: services/auth-service
+  needs: ["install:auth-service"]
+  script:
+    - npm run test
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: services/auth-service/coverage/cobertura-coverage.xml
+  rules:
+    - changes:
+        - services/auth-service/**/*
+
+test:core-service:
+  <<: *node_service_template
+  stage: test
+  variables:
+    SERVICE_PATH: services/core-service
+  needs: ["install:core-service"]
+  script:
+    - npm run test
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: services/core-service/coverage/cobertura-coverage.xml
+  rules:
+    - changes:
+        - services/core-service/**/*
+
+sonarqube-scan:
+  stage: sonarqube
+  image: sonarsource/sonar-scanner-cli:latest
+  needs: ["test:auth-service", "test:core-service"]
+  script:
+    - sonar-scanner
+        -Dsonar.projectKey=$CI_PROJECT_NAME
+        -Dsonar.sources=.
+        -Dsonar.exclusions=**/node_modules/**,**/dist/**,**/*.test.ts
+        -Dsonar.host.url=$SONAR_HOST_URL
+        -Dsonar.login=$SONAR_TOKEN
+        -Dsonar.qualitygate.wait=true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+secret-detection:
+  stage: lint
+  image: zricethezav/gitleaks:latest
+  script:
+    - gitleaks detect --source . --exit-code 1 --redact
+
+# ---------------------------------------------------------------------------
+# Build & scan - one job per service, pushing to GitLab's built-in registry
+# ---------------------------------------------------------------------------
+.build_template: &build_template
+  stage: build
+  image: docker:24
+  services: ["docker:24-dind"]
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - docker build -t "$CI_REGISTRY_IMAGE/$SERVICE_NAME:$CI_COMMIT_SHORT_SHA" "$SERVICE_PATH"
+    - docker push "$CI_REGISTRY_IMAGE/$SERVICE_NAME:$CI_COMMIT_SHORT_SHA"
+
+build:auth-service:
+  <<: *build_template
+  variables:
+    SERVICE_NAME: auth-service
+    SERVICE_PATH: services/auth-service
+  needs: ["test:auth-service"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - services/auth-service/**/*
+        - libs/shared-types/**/*
+
+build:core-service:
+  <<: *build_template
+  variables:
+    SERVICE_NAME: core-service
+    SERVICE_PATH: services/core-service
+  needs: ["test:core-service"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - services/core-service/**/*
+        - libs/shared-types/**/*
+
+.scan_template: &scan_template
+  stage: scan
+  image: aquasec/trivy:latest
+  script:
+    - trivy image --exit-code 1 --severity CRITICAL,HIGH
+        "$CI_REGISTRY_IMAGE/$SERVICE_NAME:$CI_COMMIT_SHORT_SHA"
+
+scan:auth-service:
+  <<: *scan_template
+  variables:
+    SERVICE_NAME: auth-service
+  needs: ["build:auth-service"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - services/auth-service/**/*
+
+scan:core-service:
+  <<: *scan_template
+  variables:
+    SERVICE_NAME: core-service
+  needs: ["build:core-service"]
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      changes:
+        - services/core-service/**/*
+
+# ---------------------------------------------------------------------------
+# Deploy - via kubectl against the GitLab Agent-managed cluster context.
+# Swap for a GitLab Agent GitOps sync job once that's configured (see docs/CI_CD.md).
+# ---------------------------------------------------------------------------
+deploy-staging:
+  stage: deploy-staging
+  image: bitnami/kubectl:latest
+  environment:
+    name: staging
+  script:
+    - kubectl config use-context $STAGING_KUBE_CONTEXT
+    - kubectl set image deployment/auth-service auth-service=$CI_REGISTRY_IMAGE/auth-service:$CI_COMMIT_SHORT_SHA -n staging
+    - kubectl set image deployment/core-service core-service=$CI_REGISTRY_IMAGE/core-service:$CI_COMMIT_SHORT_SHA -n staging
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+deploy-production:
+  stage: deploy-production
+  image: bitnami/kubectl:latest
+  environment:
+    name: production
+  script:
+    - kubectl config use-context $PRODUCTION_KUBE_CONTEXT
+    - kubectl set image deployment/auth-service auth-service=$CI_REGISTRY_IMAGE/auth-service:$CI_COMMIT_SHORT_SHA -n production
+    - kubectl set image deployment/core-service core-service=$CI_REGISTRY_IMAGE/core-service:$CI_COMMIT_SHORT_SHA -n production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  when: manual

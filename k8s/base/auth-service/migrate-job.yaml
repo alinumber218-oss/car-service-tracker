@@ -1,0 +1,20 @@
+# Run manually whenever a new migration file is added:
+#   kubectl delete job auth-service-migrate -n car-tracker --ignore-not-found
+#   kubectl apply -f k8s/base/auth-service/migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: auth-service-migrate
+  namespace: car-tracker
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: auth-service:local # same image as the Deployment - already has dist/db/migrate.js + migrations
+          command: ["node", "dist/db/migrate.js"]
+          envFrom:
+            - secretRef:
+                name: auth-service-secrets

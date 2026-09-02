@@ -1,0 +1,123 @@
+name: car-service-tracker
+
+services:
+  # ---------------------------------------------------------------------
+  # Infrastructure
+  # ---------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: car-tracker-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: app_password
+      POSTGRES_DB: app_user   # default maintenance DB; real service DBs created by init script
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: car-tracker-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI (guest/guest)
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: car-tracker-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------------------------------------------------------------
+  # Application services
+  # ---------------------------------------------------------------------
+  auth-service:
+    build:
+      context: ./services/auth-service
+    container_name: car-tracker-auth-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4001
+      NODE_ENV: development
+      DATABASE_URL: postgresql://app_user:app_password@postgres:5432/auth
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me
+      JWT_REFRESH_SECRET: dev-only-refresh-secret-change-me
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30d
+      CORS_ORIGIN: "*"
+    ports:
+      - "4001:4001"
+
+  core-service:
+    build:
+      context: ./services/core-service
+    container_name: car-tracker-core-service
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      PORT: 4002
+      NODE_ENV: development
+      VEHICLE_DATABASE_URL: postgresql://app_user:app_password@postgres:5432/vehicle
+      SERVICELOG_DATABASE_URL: postgresql://app_user:app_password@postgres:5432/servicelog
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      SERVICE_LOG_EVENTS_EXCHANGE: service-log-events
+      CORS_ORIGIN: "*"
+    ports:
+      - "4002:4002"
+
+  # ---------------------------------------------------------------------
+  # API Gateway - single entry point the mobile app talks to
+  # ---------------------------------------------------------------------
+  api-gateway:
+    image: nginx:1.27-alpine
+    container_name: car-tracker-api-gateway
+    restart: unless-stopped
+    depends_on:
+      - auth-service
+      - core-service
+    volumes:
+      - ./infra/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "8080:8080"
+
+volumes:
+  postgres-data:
+  rabbitmq-data:
+  minio-data:

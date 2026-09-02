@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: car-tracker
+data:
+  01-create-databases.sh: |
+    #!/bin/bash
+    set -e
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+        CREATE DATABASE auth;
+        CREATE DATABASE vehicle;
+        CREATE DATABASE servicelog;
+        CREATE DATABASE reminder;
+        CREATE DATABASE notification;
+        GRANT ALL PRIVILEGES ON DATABASE auth TO app_user;
+        GRANT ALL PRIVILEGES ON DATABASE vehicle TO app_user;
+        GRANT ALL PRIVILEGES ON DATABASE servicelog TO app_user;
+        GRANT ALL PRIVILEGES ON DATABASE reminder TO app_user;
+        GRANT ALL PRIVILEGES ON DATABASE notification TO app_user;
+    EOSQL
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: car-tracker
+type: Opaque
+stringData:
+  # Placeholder values for local/dev clusters (kind/minikube). For a real
+  # staging/production cluster, do NOT commit real secrets here - manage
+  # this Secret out-of-band (kubectl create secret, Sealed Secrets, or
+  # External Secrets Operator pulling from AWS Secrets Manager/Vault).
+  POSTGRES_USER: app_user
+  POSTGRES_PASSWORD: app_password
+  POSTGRES_DB: app_user
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: car-tracker
+spec:
+  clusterIP: None # headless service - required for StatefulSet stable network ID
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: car-tracker
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: postgres-credentials
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+              subPath: postgres # avoids "lost+found" issues on some CSI drivers
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "app_user"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "app_user"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: postgres-init
+            defaultMode: 0755
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-storage
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

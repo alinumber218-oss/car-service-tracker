@@ -1,0 +1,41 @@
+# Requires the NGINX Ingress Controller installed on the cluster. On Docker
+# Desktop's Kubernetes, use the generic "cloud" provider manifest; on kind,
+# use the kind-specific one - see k8s/README.md for exact commands.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: car-tracker-gateway
+  namespace: car-tracker
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: car-tracker.local # override per environment via the kustomize overlay
+      http:
+        paths:
+          # No rewrite - auth-service/core-service mount their routers at
+          # these exact prefixes (app.use('/auth', ...) etc.), so the full
+          # incoming path is forwarded as-is.
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 4001
+          - path: /vehicles
+            pathType: Prefix
+            backend:
+              service:
+                name: core-service
+                port:
+                  number: 4002
+          - path: /service-logs
+            pathType: Prefix
+            backend:
+              service:
+                name: core-service
+                port:
+                  number: 4002
+      # Note: /health is intentionally not exposed through the Ingress -
+      # use `kubectl port-forward` or the Deployment's readiness/liveness
+      # probes (already configured) to check service health instead.

@@ -1,0 +1,14 @@
+{
+  "name": "@car-tracker/shared-types",
+  "version": "0.1.0",
+  "description": "Shared TypeScript interfaces/DTOs used across backend services and the mobile app",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "echo \"(no-op) lint not configured for shared-types\""
+  },
+  "devDependencies": {
+    "typescript": "5.5.4"
+  }
+}

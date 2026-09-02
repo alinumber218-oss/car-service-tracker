@@ -1,0 +1,24 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: car-tracker-staging
+
+resources:
+  - ../../base
+
+patches:
+  - target:
+      kind: Ingress
+      name: car-tracker-gateway
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: staging.car-tracker.example.com
+
+images:
+  - name: auth-service:local
+    newName: registry.gitlab.yourcompany.example.com/your-group/car-service-tracker/auth-service
+    newTag: staging-latest
+  - name: core-service:local
+    newName: registry.gitlab.yourcompany.example.com/your-group/car-service-tracker/core-service
+    newTag: staging-latest

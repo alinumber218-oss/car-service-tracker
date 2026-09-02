@@ -1,0 +1,20 @@
+# Run manually whenever a new migration file is added:
+#   kubectl delete job core-service-migrate -n car-tracker --ignore-not-found
+#   kubectl apply -f k8s/base/core-service/migrate-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: core-service-migrate
+  namespace: car-tracker
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: core-service:local
+          command: ["node", "dist/db/migrate.js"]
+          envFrom:
+            - secretRef:
+                name: core-service-secrets
