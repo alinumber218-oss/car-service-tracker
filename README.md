@@ -248,6 +248,12 @@ files when running via `dev-up.sh`.
 `core-service`** — Core Service doesn't issue tokens, it only verifies ones
 signed by Auth Service.
 
+**Dependency sources (npm/Gradle/Docker) are separate from the above** —
+this project is wired to pull all of those through a self-hosted Nexus
+Repository instead of public registries. See **`docs/NEXUS.md`** for the
+full setup and exactly which files (`.npmrc`, `mobile/android/build.gradle`,
+both Dockerfiles, `.gitlab-ci.yml`) need your real Nexus hostname/credentials.
+
 ---
 
 ## API surface (current)
@@ -283,5 +289,6 @@ All routes except `/health` and `/service-logs/types` require
 - **`docs/ARCHITECTURE.md`** — service boundaries, data ownership, event flow
 - **`docs/ROADMAP.md`** — what's built vs. what's next (Reminder Service, Notification Service, File Service, Kubernetes manifests, Terraform)
 - **`docs/CI_CD.md`** — how `.gitlab-ci.yml` maps to a self-managed GitLab CE + Kubernetes setup
+- **`docs/NEXUS.md`** — routing npm, Gradle/Android, and Docker base-image dependencies through a self-hosted Nexus Repository instead of public registries
 - **`mobile/README.md`** — mobile app: Android Studio + Xcode setup steps, project structure
 - **`mobile/ANDROID_STUDIO_TROUBLESHOOTING.md`** — fixes for the common Gradle-sync-cascade errors on first import

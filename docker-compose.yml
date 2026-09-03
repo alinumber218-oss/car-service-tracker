@@ -63,6 +63,10 @@ services:
   auth-service:
     build:
       context: ./services/auth-service
+      args:
+        BASE_REGISTRY: ${NEXUS_DOCKER_PROXY:-docker.io/library}
+      secrets:
+        - npm_token
     container_name: car-tracker-auth-service
     restart: unless-stopped
     depends_on:
@@ -83,6 +87,10 @@ services:
   core-service:
     build:
       context: ./services/core-service
+      args:
+        BASE_REGISTRY: ${NEXUS_DOCKER_PROXY:-docker.io/library}
+      secrets:
+        - npm_token
     container_name: car-tracker-core-service
     restart: unless-stopped
     depends_on:
@@ -121,3 +129,13 @@ volumes:
   postgres-data:
   rabbitmq-data:
   minio-data:
+
+secrets:
+  # Read by each service's Dockerfile via a BuildKit secret mount during
+  # `npm install`, never baked into an image layer. Ships as an empty file
+  # so `docker compose build` works out of the box (empty token = anonymous
+  # npm access - fine if your Nexus npm-group repo allows anonymous reads).
+  # Put a real token in this file if your Nexus requires auth for reads.
+  # See docs/NEXUS.md.
+  npm_token:
+    file: ./secrets/nexus_npm_token.txt

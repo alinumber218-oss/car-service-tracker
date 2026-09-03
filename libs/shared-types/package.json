@@ -6,7 +6,11 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "lint": "echo \"(no-op) lint not configured for shared-types\""
+    "lint": "echo \"(no-op) lint not configured for shared-types\"",
+    "publish:nexus": "npm publish"
+  },
+  "publishConfig": {
+    "registry": "https://nexus.yourcompany.example.com/repository/npm-hosted/"
   },
   "devDependencies": {
     "typescript": "5.5.4"

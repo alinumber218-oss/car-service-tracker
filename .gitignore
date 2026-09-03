@@ -15,3 +15,8 @@ ios/Pods/
 minio-data/
 postgres-data/
 rabbitmq-data/
+
+# Real Nexus npm token - ships as an empty file so `docker compose build`
+# works immediately; gitignored so a real token pasted in here later never
+# gets committed. See docs/NEXUS.md.
+secrets/nexus_npm_token.txt

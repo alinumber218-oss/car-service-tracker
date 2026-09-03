@@ -1,0 +1,50 @@
+// Gradle init script - guarantees Nexus is the FIRST repository consulted
+// for every project in the Android build, including the :app module,
+// whose google()/mavenCentral() repositories are auto-injected internally
+// by the React Native Gradle plugin (com.facebook.react.rootproject) and
+// can't be edited directly from this project's build.gradle files.
+//
+// Gradle tries repositories in declaration order and stops at the first
+// one that has the requested artifact. Init scripts run before any
+// project's own build.gradle is evaluated, so the Nexus repository
+// declared here is always checked first - as long as your Nexus "maven
+// group" repository proxies everything the build needs (Google's Maven
+// repo, Maven Central, Gradle Plugin Portal), the RN plugin's own
+// google()/mavenCentral() declarations are never actually contacted.
+//
+// HOW TO USE:
+//   Option A (this machine only, affects every Gradle project you build):
+//     Copy this file to ~/.gradle/init.d/nexus-init.gradle
+//   Option B (this project only, explicit):
+//     ./gradlew build --init-script nexus-init.gradle
+//
+// Credentials: set NEXUS_USERNAME / NEXUS_PASSWORD in your environment
+// (or in ~/.gradle/gradle.properties as nexusUsername/nexusPassword,
+// read as a fallback below) - never commit real credentials.
+
+def nexusMavenGroupUrl = System.getenv("NEXUS_MAVEN_GROUP_URL") ?: "https://nexus.yourcompany.example.com/repository/maven-group/"
+def nexusUser = System.getenv("NEXUS_USERNAME") ?: (project.findProperty("nexusUsername") ?: "")
+def nexusPass = System.getenv("NEXUS_PASSWORD") ?: (project.findProperty("nexusPassword") ?: "")
+
+allprojects {
+    buildscript {
+        repositories {
+            maven {
+                url = nexusMavenGroupUrl
+                credentials {
+                    username = nexusUser
+                    password = nexusPass
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            url = nexusMavenGroupUrl
+            credentials {
+                username = nexusUser
+                password = nexusPass
+            }
+        }
+    }
+}

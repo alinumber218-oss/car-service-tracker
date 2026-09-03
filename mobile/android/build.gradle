@@ -8,8 +8,22 @@ buildscript {
         kotlinVersion = "1.9.25"
     }
     repositories {
-        google()
-        mavenCentral()
+        // Routed through Nexus instead of google()/mavenCentral() directly -
+        // point this at a Nexus "maven group" repository that aggregates
+        // proxies for Google's Maven repo, Maven Central, and the Gradle
+        // Plugin Portal. See docs/NEXUS.md for setup and for why the
+        // android/nexus-init.gradle init script (not just this block) is
+        // what actually guarantees ALL Android dependency resolution goes
+        // through Nexus - the React Native Gradle plugin auto-injects its
+        // own google()/mavenCentral() repositories for the :app module that
+        // this buildscript block alone can't override.
+        maven {
+            url = uri(System.getenv("NEXUS_MAVEN_GROUP_URL") ?: "https://nexus.yourcompany.example.com/repository/maven-group/")
+            credentials {
+                username = System.getenv("NEXUS_USERNAME")
+                password = System.getenv("NEXUS_PASSWORD")
+            }
+        }
     }
     dependencies {
         classpath("com.android.tools.build:gradle")
